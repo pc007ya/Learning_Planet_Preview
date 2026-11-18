@@ -16,9 +16,10 @@ async def main():
  server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start();base=f'http://127.0.0.1:{server.server_port}'
  try:
   async with async_playwright() as p:
-   for engine in ['chromium','webkit']:
+   for engine in ['webkit','chromium']:
     browser=await getattr(p,engine).launch(headless=True)
     for rel in routes:
+     report['current']={'engine':engine,'path':rel,'stage':'opening'}
      ctx=await browser.new_context(service_workers='block')
      blocked=[];errors=[];root_requests=[]
      async def gate(route):
@@ -36,8 +37,14 @@ async def main():
      assert await page.evaluate("window.LP_PREVIEW_READY&&window.__LP_PREVIEW_ISOLATION_V1__.verify()&&!document.body.innerText.includes('預覽隔離未能啟動')")
      await page.locator('.login-auth-card input').nth(0).fill('DEMO')
      await page.locator('.login-auth-card input').nth(1).fill('DEMO')
+     report['current']['stage']='DEMO submit'
      await page.get_by_role('button',name='登入學習星球',exact=True).click()
-     await page.wait_for_function("!document.querySelector('.login-auth-card')&&!!document.querySelector('.app-home-btn,.home-subject-card')",timeout=30000)
+     try:
+      await page.wait_for_function("!document.querySelector('.login-auth-card')&&!!document.querySelector('.app-home-btn,.home-subject-card')",timeout=30000)
+     except Exception:
+      report['current']['state']=await page.evaluate("({url:location.href,title:document.title,body:document.body.innerText.slice(0,6000),ready:window.LP_PREVIEW_READY,demo:localStorage.getItem('preview-demo-active'),storageKeys:Object.keys(localStorage),homeCount:document.querySelectorAll('.app-home-btn,.home-subject-card').length,loginCount:document.querySelectorAll('.login-auth-card').length})")
+      await page.screenshot(path=str(OUT/'route-failure.png'),full_page=True)
+      raise
      assert await page.evaluate("window.LP_PREVIEW_READY&&window.__LP_PREVIEW_ISOLATION_V1__.verify()&&window.LearningPlanetAuthV2.auth.currentUser===null&&!window.LearningPlanetFirebase.isReady()")
      assert await original.evaluate("localStorage.getItem('production-route-sentinel')")=='UNCHANGED'
      assert not errors,errors
@@ -48,6 +55,8 @@ async def main():
    report['status']='ROUTE_BOOTSTRAP_PASSED'
  except Exception:
   report['status']='FAILED';report['failure']=traceback.format_exc()
+  report['current']['errors']=errors;report['current']['blocked']=blocked
+
  finally:
   (OUT/'route-shell-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2));server.shutdown()
  return report['status']=='ROUTE_BOOTSTRAP_PASSED'
