@@ -1,5 +1,5 @@
 """Engine diagnostic, NOT acceptance. Frozen prior public isolated artifact; no backend."""
-import asyncio,json,os,sys,threading,traceback
+import asyncio,json,os,sys,threading,traceback,subprocess
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 sys.path.insert(0,'/tests/isolation-ci/tests')
@@ -11,8 +11,20 @@ async def main():
  server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start();base=f'http://127.0.0.1:{server.server_port}'
  report={'scope':'Linux WebKit crash diagnosis only. Prior candidate b03dffa6 root, NOT route/deployment acceptance. no-fullscreen is test instrumentation, not an app fix.','modes':[]}
  async with async_playwright() as p:
-  for mode in ['minimal-fullscreen','minimal-control','root-real','root-no-fullscreen']:
-   record={'mode':mode,'crashes':[],'errors':[],'external_blocked':[]}
+  for mode in ['root-real']:
+   def memory():
+    result={}
+    for k in ['memory.events','memory.peak','memory.current','memory.max']:
+     q=Path('/sys/fs/cgroup')/k
+     if q.exists():result[k]=q.read_text()
+    result['processes']=subprocess.check_output(['ps','-eo','pid,comm,rss'],text=True)
+    v=os.statvfs('/dev/shm');result['shm_available']=v.f_bavail*v.f_frsize
+    return result
+   record={'mode':mode,'crashes':[],'errors':[],'external_blocked':[],'before':memory(),'samples':[]}
+   async def sample():
+    while True:
+     record['samples'].append(memory());await asyncio.sleep(1)
+   sampler=asyncio.create_task(sample())
    browser=await p.webkit.launch(headless=True)
    ctx=await browser.new_context(service_workers='block')
    async def gate(route):
@@ -43,6 +55,8 @@ async def main():
     record['body']=await page.locator('body').inner_text(timeout=3000)
     await page.screenshot(path=str(OUT/(mode+'.png')),full_page=True,timeout=5000)
    except Exception as e:record['snapshot_error']=str(e)
+   sampler.cancel()
+   record['after']=memory()
    report['modes'].append(record)
    await browser.close()
  (OUT/'webkit-crash-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2));server.shutdown()

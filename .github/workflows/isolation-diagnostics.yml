@@ -36,7 +36,7 @@ jobs:
       - name: No-egress engine diagnosis only
         run: |
           mkdir -p results
-          docker run --rm --network none --shm-size=1g -e QA_EXACT_ARTIFACT=1 -v "$PWD:/tests:ro" -v "$PWD/candidate-site:/source:ro" -v "$PWD/results:/results" lp-isolation-tests python /tests/isolation-diagnostics/webkit_crash.py
+          docker run --rm --network none --shm-size=1g -e DEBUG=pw:browser -e QA_EXACT_ARTIFACT=1 -v "$PWD:/tests:ro" -v "$PWD/candidate-site:/source:ro" -v "$PWD/results:/results" lp-isolation-tests python /tests/isolation-diagnostics/webkit_crash.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
