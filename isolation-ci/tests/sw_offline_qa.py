@@ -1,5 +1,5 @@
 """Actual IndexedDB/SW, only inside Docker --network none. No external route mock."""
-import asyncio,base64,io,json,os,socket,threading,traceback
+import asyncio,base64,io,json,os,socket,threading,traceback,tempfile
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from playwright.async_api import async_playwright
@@ -26,7 +26,7 @@ class Handler(BaseHTTPRequestHandler):
    body=PNG;mime='image/png'
   else:body=b'<!doctype html><title>Synthetic image cache</title>'
   self.send_response(200);self.send_header('Content-Type',mime);self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(body)
-SEED="""async ({name,key,revision})=>{const db=await new Promise((ok,no)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore('images');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(new Error(r.error?.name+': '+r.error?.message))});await new Promise((ok,no)=>{const t=db.transaction('images','readwrite');t.objectStore('images').put({revision,blob:new Blob(['SENTINEL'],{type:'image/png'}),savedAt:Date.now(),lastUsed:Date.now()},key);t.oncomplete=ok;t.onerror=()=>no(new Error(t.error?.name+': '+t.error?.message))});db.close()}"""
+SEED="""async ({name,key,revision})=>{const db=await new Promise((ok,no)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore('images');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(new Error(r.error?.name+': '+r.error?.message))});await new Promise((ok,no)=>{const t=db.transaction('images','readwrite');t.objectStore('images').put({revision,blob:new Blob(['SENTINEL'],{type:'image/png'}),savedAt:Date.now(),lastUsed:Date.now()},key);t.oncomplete=ok;t.onerror=e=>no(new Error(e.target?.error?.name+': '+e.target?.error?.message))});db.close()}"""
 READ="""async ({name,key})=>{const db=await new Promise((ok,no)=>{const r=indexedDB.open(name,1);r.onsuccess=()=>ok(r.result);r.onerror=no});const value=await new Promise((ok,no)=>{const t=db.transaction('images','readonly');const r=t.objectStore('images').get(key);r.onsuccess=()=>ok(r.result?{revision:r.result.revision,size:r.result.blob.size}:null);r.onerror=no});db.close();return value}"""
 async def main():
  global available
@@ -40,8 +40,16 @@ async def main():
  server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start();base=f'http://127.0.0.1:{server.server_port}'
  try:
   async with async_playwright() as p:
-   browser=await getattr(p,os.environ.get('QA_BROWSER','chromium')).launch(headless=True)
-   ctx=await browser.new_context(service_workers='allow')
+   kind=os.environ.get('QA_BROWSER','chromium')
+   if kind=='webkit':
+    # Test normal disk-backed storage in a NEW temporary profile, never a user profile.
+    ctx=await p.webkit.launch_persistent_context(tempfile.mkdtemp(prefix='lp-sw-synthetic-'),headless=True,service_workers='allow')
+    report['context']='fresh temporary persistent WebKit; earlier ephemeral failure retained separately'
+    browser=None
+   else:
+    browser=await p.chromium.launch(headless=True)
+    ctx=await browser.new_context(service_workers='allow')
+    report['context']='fresh ephemeral Chromium'
    a=await ctx.new_page();b=await ctx.new_page();await a.goto(base+'/a/');await b.goto(base+'/b/')
    db_a='learning-planet-preview-entry-images.v1:'+base+'/a/'
    db_b='learning-planet-preview-entry-images.v1:'+base+'/b/'
@@ -77,7 +85,8 @@ async def main():
    assert await a.evaluate(READ,{'name':db_a,'key':'http://192.0.2.1/blocked.png'}) is None
    report['checks'].append('Worker cannot cache synthetic external URL with transport egress disabled')
    report['status']='PASSED';report['hits']=hits
-   await browser.close()
+   await ctx.close()
+   if browser:await browser.close()
  except Exception:report['status']='FAILED';report['error']=traceback.format_exc()
  finally:server.shutdown();(OUT/'sw-offline-report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
  return report.get('status')=='PASSED'

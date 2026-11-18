@@ -49,7 +49,10 @@ async def main():
    await page.screenshot(path=str(OUT/'ui-home.png'),full_page=True)
    report['checks'].append('Actual DEMO login reaches actual home; offline auth remains null')
    for subject in ['chinese','english','math']:
-    await page.locator('.home-subject-card[data-subject="'+subject+'"]').click()
+    # Floating planet buttons never satisfy Playwright's pointer stability check.
+    # Use the real keyboard activation path, not forced DOM event dispatch.
+    button=page.locator('.home-subject-card[data-subject="'+subject+'"]')
+    await button.focus();await button.press('Enter')
     expected={'chinese':'國文','english':'英文','math':'數學'}[subject]
     await page.locator('.subject-world-filter[data-world="'+expected+'"]:visible').wait_for(timeout=15000)
     await page.wait_for_timeout(3000)
