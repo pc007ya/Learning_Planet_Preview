@@ -25,8 +25,12 @@ class Handler(BaseHTTPRequestHandler):
   elif path==PREFIX:body='<title>DEMO fixture home</title><p>Preview fixture home, not live app</p>'
   elif path==PREFIX+'auth-v2/page-access.mjs':mime='text/javascript';body=GUARD
   elif path==PREFIX+'modules/story-entry.mjs':mime='text/javascript';body=STORY
-  elif rel in PAGES or rel in BOOKS:
-   story=rel in BOOKS
+  elif path==PREFIX+'auth-v2/page-script-loader.mjs':mime='text/javascript';body=(OVERLAY/'auth-v2/page-script-loader.mjs').read_text()
+  elif rel in BOOKS:
+   body=(ROOT/'story-fixtures'/rel).read_text()
+   body=re.sub(r'(<head\b[^>]*>)',lambda m:m[0]+'<script>'+BOOT+'</script>',body,count=1)
+  elif rel in PAGES:
+   story=False
    attrs=('data-story-reader="'+READERS[rel]+'" src="modules/story-entry.mjs"') if story else 'data-page-access data-entry="qa-reader.mjs" src="'+('../'*(len(Path(rel).parts)-1))+'auth-v2/page-access.mjs"'
    # Match actual source document base for relative entry modules.
    body='<html><head><meta charset="utf-8"><script>'+BOOT+'</script></head><body><p id="page-auth-status">locked</p><main id="story-app" data-auth-content hidden inert></main><script type="module" '+attrs+'></script></body></html>'
@@ -44,7 +48,7 @@ async def verify_original(original):
  # Reuse the SAME page without navigation or reseeding: corruption must remain visible.
  assert await original.evaluate("localStorage.getItem('production-sentinel')")=='UNCHANGED', 'Original sentinel was modified or deleted'
 async def run():
- OUT.mkdir(exist_ok=True);report={'scope':'synthetic local parser and 76/14 guard fixtures ONLY','external_attempts':[],'results':[],'sw':'NOT RUN: workers blocked, separate egress-isolated suite required','full_ui':'NOT RUN: no real app or CDN'}
+ OUT.mkdir(exist_ok=True);report={'scope':'synthetic parser + 62 direct learning guards + 14 actual-HTML page-access/loader/story-entry chains; mock readers only','external_attempts':[],'results':[],'sw':'NOT RUN: workers blocked, separate egress-isolated suite required','full_ui':'NOT RUN: no real app or CDN'}
  server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start();base=f'http://127.0.0.1:{server.server_port}'
  try:
   async with async_playwright() as p:
@@ -64,25 +68,32 @@ async def run():
    for fail in [False,True]:
     ctx,original=await context(fail);page=await ctx.new_page();await page.goto(base+'/parser/'+('failure' if fail else 'success'));await page.wait_for_timeout(500)
     value=await page.evaluate('({ready:!!window.LP_PREVIEW_READY,inline:!!window.__inlineExecuted,external:!!window.__externalExecuted,module:!!window.__moduleExecuted,error:document.body.innerText.includes("預覽隔離未能啟動")})')
+    report['results'].append({'parser_observation':fail,'value':value})
     assert value['ready']==(not fail);assert value['inline']==(not fail);assert value['external']==(not fail);assert value['module']==(not fail)
     if fail:assert value['error']
     await verify_original(original)
     report['results'].append({'parser_failure':fail,'observed':value});await ctx.close()
    for active in [False,True]:
     ctx,original=await context(active=active)
-    for path in PAGES+BOOKS:
+    for path in PAGES:
      page=await ctx.new_page();await page.goto(base+PREFIX+path);await page.wait_for_timeout(150)
      if active:
       await page.wait_for_function('window.__readerLoads===1',timeout=3000)
       await page.evaluate('window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}))');await page.wait_for_timeout(100)
       assert await page.evaluate('window.__readerLoads')==1
+      await page.wait_for_function("Array.from(document.querySelectorAll('[data-auth-content]')).every(e=>!e.hidden&&!e.inert)&&document.getElementById('page-auth-status').hidden",timeout=3000)
+      if path in BOOKS:
+       assert await page.locator('script[data-auth-script]').count()==0
+       assert await page.locator('script[data-story-reader][type=module]').count()==1
      else:await page.wait_for_url(base+PREFIX)
      await verify_original(original)
      report['results'].append({'guard':path,'demo':active,'pass':True});await page.close()
     await ctx.close()
    await browser.close()
    report['status']='PASSED'
- except Exception as e:report['blocked_or_failure']=str(e);report['status']='NOT PASSED'
+ except Exception as e:
+  import traceback
+  report['blocked_or_failure']=traceback.format_exc();report['status']='NOT PASSED'
  finally:(OUT/'offline-fixture-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2));server.shutdown()
  return report.get('status')=='PASSED'
 if __name__=='__main__':sys.exit(0 if asyncio.run(run()) else 1)
