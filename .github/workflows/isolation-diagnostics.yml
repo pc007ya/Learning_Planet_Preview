@@ -1,0 +1,45 @@
+name: WebKit isolated crash diagnostics (NO DEPLOY)
+on:
+  push:
+    branches: [ci/isolation-fixtures-20261118]
+    paths: [.github/workflows/isolation-diagnostics.yml, isolation-diagnostics/**]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-isolated-candidate-NOT-DEPLOYED
+          run-id: 44333131842
+          github-token: ${{ github.token }}
+          path: prior-candidate
+      - name: Verify frozen root baseline only (known route defect, NOT deployable)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,tarfile
+          p=Path('prior-candidate/candidate-site.tar')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='9bbac3f7960ea497d66dcdac3b83771e7fb02947bba12c043573d569d77c2449'
+          with tarfile.open(p) as t:
+              for m in t:
+                  assert not Path(m.name).is_absolute() and '..' not in Path(m.name).parts and (m.isfile() or m.isdir())
+              t.extractall('candidate-site',filter='data')
+          PY
+      - run: docker build -t lp-isolation-tests isolation-ci
+      - name: No-egress engine diagnosis only
+        run: |
+          mkdir -p results
+          docker run --rm --network none --shm-size=1g -e QA_EXACT_ARTIFACT=1 -v "$PWD:/tests:ro" -v "$PWD/candidate-site:/source:ro" -v "$PWD/results:/results" lp-isolation-tests python /tests/isolation-diagnostics/webkit_crash.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webkit-engine-diagnosis
+          path: results
+          retention-days: 7
