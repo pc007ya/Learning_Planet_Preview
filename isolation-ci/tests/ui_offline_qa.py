@@ -7,17 +7,24 @@ from playwright.async_api import async_playwright
 ROOT=Path(__file__).resolve().parents[1];SOURCE=Path('/source');OVERLAY=ROOT/'overlay'
 OUT=Path(os.environ.get('QA_RESULTS','/results'));OUT.mkdir(exist_ok=True)
 PREFIX='/Learning_Planet_Preview/'
+EXACT=os.environ.get('QA_EXACT_ARTIFACT')=='1'
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*a):pass
  def do_GET(self):
   path=unquote(urlparse(self.path).path)
   if path=='/original-fixture':
    self.send_response(200);self.send_header('Content-Type','text/html');self.end_headers();self.wfile.write(b'<title>Synthetic original sentinel</title>');return
+  if EXACT and path.startswith('/Learning_Planet_Assets/'):
+   rel=path[len('/Learning_Planet_Assets/'):]
+   if '..' in Path(rel).parts:self.send_error(403);return
+   p=Path('/assets')/rel
+   if not p.is_file():self.send_error(404);return
+   self.send_response(200);self.send_header('Content-Type',mimetypes.guess_type(str(p))[0] or 'application/octet-stream');self.end_headers();self.wfile.write(p.read_bytes());return
   if not path.startswith(PREFIX):self.send_error(404);return
   rel=path[len(PREFIX):] or 'index.html'
   if '..' in Path(rel).parts:self.send_error(403);return
-  p=OVERLAY/rel
-  if not p.is_file():p=SOURCE/rel
+  p=(SOURCE if EXACT else OVERLAY)/rel
+  if not p.is_file() and not EXACT:p=SOURCE/rel
   if not p.is_file():self.send_error(404);return
   self.send_response(200);self.send_header('Content-Type',mimetypes.guess_type(str(p))[0] or 'application/octet-stream');self.end_headers();self.wfile.write(p.read_bytes())
 async def main():
