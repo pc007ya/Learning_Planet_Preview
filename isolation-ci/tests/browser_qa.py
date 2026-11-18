@@ -20,8 +20,10 @@ class Handler(BaseHTTPRequestHandler):
   path=urlparse(self.path).path; rel=path.removeprefix(PREFIX);mime='text/html'
   if path=='/original-fixture':body='<title>Synthetic original</title>'
   elif path=='/sentinel.js':mime='text/javascript';body='window.__externalExecuted=true;'
-  elif path in ['/parser/success','/parser/failure']:
+  elif path in ['/parser/success','/parser/failure','/parser/reentry']:
    body='<html><head><meta charset="utf-8"><script>'+BOOT+'</script><script>window.__inlineExecuted=true;</script><script src="/sentinel.js"></script><script type="module">window.__moduleExecuted=true;</script></head><body>fixture sentinel</body></html>'
+  elif path=='/reentry-body':
+   body='<html><head><script>'+BOOT+'</script></head><body><script>window.__reentryPassed=window.LP_PREVIEW_READY&&!document.body.innerText.includes("預覽隔離未能啟動");</script>reentry</body></html>'
   elif path==PREFIX:body='<title>DEMO fixture home</title><p>Preview fixture home, not live app</p>'
   elif path==PREFIX+'auth-v2/page-access.mjs':mime='text/javascript';body=GUARD
   elif path==PREFIX+'modules/story-entry.mjs':mime='text/javascript';body=STORY
@@ -75,6 +77,12 @@ async def run():
     if fail:assert value['error']
     await verify_original(original)
     report['results'].append({'parser_failure':fail,'observed':value});await ctx.close()
+   ctx,original,executions=await context();page=await ctx.new_page()
+   await page.goto(base+'/parser/reentry')
+   await page.evaluate("async()=>{const s=await (await fetch('/reentry-body')).text();document.open();document.write(s);document.close()}")
+   await page.wait_for_function('window.__reentryPassed===true')
+   assert not await page.get_by_text('預覽隔離未能啟動',exact=True).count()
+   await verify_original(original);report['results'].append({'same_realm_document_reentry':True});await ctx.close()
    for active in [False,True]:
     ctx,original,executions=await context(active=active)
     for path in PAGES:

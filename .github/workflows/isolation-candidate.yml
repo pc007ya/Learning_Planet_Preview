@@ -5,6 +5,8 @@ on:
     paths:
       - .github/workflows/isolation-candidate.yml
       - isolation-ci/tests/verify_candidate.py
+      - isolation-ci/preview-bootstrap.js
+      - isolation-ci/tests/route_shell_qa.py
 permissions:
   contents: read
   actions: read
@@ -100,6 +102,7 @@ jobs:
         run: |
           mkdir -p results/exact
           docker run --rm --network none --shm-size=1g -e QA_EXACT_ARTIFACT=1 -e QA_RESULTS=/results -v "$PWD/isolation-ci:/tests:ro" -v "$PWD/candidate-site:/source:ro" -v "$PWD/work/two-sites/assets:/assets:ro" -v "$PWD/results/exact:/results" lp-isolation-tests python /tests/tests/ui_offline_qa.py
+          docker run --rm --network none --shm-size=1g -e QA_EXACT_ARTIFACT=1 -e QA_RESULTS=/results -v "$PWD/isolation-ci:/tests:ro" -v "$PWD/candidate-site:/source:ro" -v "$PWD/work/two-sites/assets:/assets:ro" -v "$PWD/results/exact:/results" lp-isolation-tests python /tests/tests/route_shell_qa.py
           tar -cf candidate-site.tar -C candidate-site .
           sha256sum candidate-site.tar > verification/candidate-tar.sha256
       - name: Retain tested candidate only after all gates pass
