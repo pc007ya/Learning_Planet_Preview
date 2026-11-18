@@ -35,7 +35,7 @@ class Handler(BaseHTTPRequestHandler):
    # Match actual source document base for relative entry modules.
    body='<html><head><meta charset="utf-8"><script>'+BOOT+'</script></head><body><p id="page-auth-status">locked</p><main id="story-app" data-auth-content hidden inert></main><script type="module" '+attrs+'></script></body></html>'
   elif path.startswith(PREFIX) and (path.endswith('qa-reader.mjs') or any(path==PREFIX+urlparse(v).path for v in READERS.values())):
-   mime='text/javascript';body='window.__readerLoads=(window.__readerLoads||0)+1;'
+   mime='text/javascript';body='await window.__recordReader();window.__readerLoads=(window.__readerLoads||0)+1;'
   else:self.send_error(404);return
   self.send_response(200);self.send_header('Content-Type',mime);self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(body.encode())
 async def seed_original(ctx,base,active):
@@ -63,10 +63,12 @@ async def run():
     await ctx.route_web_socket('**/*',lambda ws:ws.close())
     # Fault injection only, never repair or seed data from an init script.
     if fail:await ctx.add_init_script("if(location.pathname==='/parser/failure')Object.defineProperty(window,'localStorage',{value:localStorage,configurable:false});")
+    executions=[]
+    await ctx.expose_binding('__recordReader',lambda source:executions.append(source['page']))
     original=await seed_original(ctx,base,active)
-    return ctx,original
+    return ctx,original,executions
    for fail in [False,True]:
-    ctx,original=await context(fail);page=await ctx.new_page();await page.goto(base+'/parser/'+('failure' if fail else 'success'));await page.wait_for_timeout(500)
+    ctx,original,executions=await context(fail);page=await ctx.new_page();await page.goto(base+'/parser/'+('failure' if fail else 'success'));await page.wait_for_timeout(500)
     value=await page.evaluate('({ready:!!window.LP_PREVIEW_READY,inline:!!window.__inlineExecuted,external:!!window.__externalExecuted,module:!!window.__moduleExecuted,error:document.body.innerText.includes("預覽隔離未能啟動")})')
     report['results'].append({'parser_observation':fail,'value':value})
     assert value['ready']==(not fail);assert value['inline']==(not fail);assert value['external']==(not fail);assert value['module']==(not fail)
@@ -86,8 +88,9 @@ async def run():
        assert await page.locator('script[data-auth-script]').count()==0
        assert await page.locator('script[data-story-reader][type=module]').count()==1
      else:await page.wait_for_url(base+PREFIX)
+     assert sum(p is page for p in executions)==(1 if active else 0), 'Reader execution count persists across redirect'
      await verify_original(original)
-     report['results'].append({'guard':path,'demo':active,'pass':True});await page.close()
+     report['results'].append({'guard':path,'demo':active,'reader_executions':sum(p is page for p in executions),'pass':True});await page.close()
     await ctx.close()
    await browser.close()
    report['status']='PASSED'

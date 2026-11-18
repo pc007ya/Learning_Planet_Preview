@@ -1,0 +1,4 @@
+FROM mcr.microsoft.com/playwright/python:v1.62.0-noble
+RUN python -m pip install --no-cache-dir playwright==1.62.0
+ENV PYTHONDONTWRITEBYTECODE=1
+WORKDIR /tests

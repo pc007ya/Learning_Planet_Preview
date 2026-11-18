@@ -39,3 +39,56 @@ jobs:
           name: isolation-fixtures-${{ matrix.browser }}
           path: isolation-ci/browser-results/offline-fixture-report.json
           retention-days: 7
+
+  sw-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build pinned official test container
+        run: docker build -t lp-isolation-tests isolation-ci
+      - name: Native SW and IndexedDB with no transport egress
+        run: |
+          status=0
+          for browser in chromium webkit; do
+            mkdir -p "results/sw-$browser"
+            docker run --rm --network none --shm-size=1g -e QA_BROWSER="$browser" -e QA_RESULTS=/results -v "$PWD/isolation-ci:/tests:ro" -v "$PWD/results/sw-$browser:/results" lp-isolation-tests python /tests/tests/sw_offline_qa.py || status=1
+          done
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sw-native-offline
+          path: results
+          retention-days: 7
+  actual-ui-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: pc007ya/Learning_Planet
+          ref: 2d741dde86dbee24c1f61451be84f4e83d3e6d3c
+          path: source
+          persist-credentials: false
+      - name: Prepare isolated candidate and verified public runtime libraries
+        run: |
+          python3 isolation-ci/build-overlay.py source
+          python3 isolation-ci/tests/prepare_ui.py
+      - name: Build pinned official test container
+        run: docker build -t lp-isolation-tests isolation-ci
+      - name: Actual app smoke with no transport egress and synthetic DEMO only
+        run: |
+          mkdir -p results/ui
+          docker run --rm --network none --shm-size=1g -e QA_RESULTS=/results -v "$PWD/isolation-ci:/tests:ro" -v "$PWD/source:/source:ro" -v "$PWD/results/ui:/results" lp-isolation-tests python /tests/tests/ui_offline_qa.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: actual-ui-offline
+          path: results
+          retention-days: 7
