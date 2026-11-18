@@ -56,6 +56,8 @@ jobs:
             mkdir -p "results/sw-$browser"
             docker run --rm --network none --shm-size=1g -e QA_BROWSER="$browser" -e QA_RESULTS=/results -v "$PWD/isolation-ci:/tests:ro" -v "$PWD/results/sw-$browser:/results" lp-isolation-tests python /tests/tests/sw_offline_qa.py || status=1
           done
+          mkdir -p results/sw-webkit-ephemeral
+          docker run --rm --network none --shm-size=1g -e QA_RESULTS=/results -v "$PWD/isolation-ci:/tests:ro" -v "$PWD/results/sw-webkit-ephemeral:/results" lp-isolation-tests python /tests/tests/webkit_ephemeral_qa.py || status=1
           exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()

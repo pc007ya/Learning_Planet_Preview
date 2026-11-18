@@ -56,7 +56,11 @@ async def main():
     expected={'chinese':'國文','english':'英文','math':'數學'}[subject]
     await page.locator('.subject-world-filter[data-world="'+expected+'"]:visible').wait_for(timeout=15000)
     await page.wait_for_timeout(3000)
-    report['checks'].append({'subject':subject,'screen':(await page.locator('body').inner_text())[:3000],'canvases':await page.locator('canvas').count(),'broken_images':await page.locator('img').evaluate_all('(xs)=>xs.filter(x=>x.src&&x.complete&&x.naturalWidth===0).length')})
+    active=await page.locator('.subject-world-tabs button[data-active="true"]:visible').inner_text()
+    assert expected in active, 'Wrong active subject tab: '+active
+    unique={'chinese':'國語生字練習簿','english':'元音','math':'小一知識星圖'}[subject]
+    assert unique in await page.locator('body').inner_text(), 'Missing subject-specific content: '+unique
+    report['checks'].append({'subject':subject,'active_tab':active,'unique_content':unique,'screen':(await page.locator('body').inner_text())[:3000],'canvases':await page.locator('canvas').count(),'broken_images':await page.locator('img').evaluate_all('(xs)=>xs.filter(x=>x.src&&x.complete&&x.naturalWidth===0).length')})
     await page.screenshot(path=str(OUT/('ui-'+subject+'.png')),full_page=True)
     await page.locator('.app-home-btn:visible').first.click()
     await page.locator('.home-subject-card[data-subject="chinese"]').wait_for(state='visible',timeout=10000)
@@ -64,7 +68,10 @@ async def main():
    assert await original.evaluate("localStorage.getItem('firebase:authUser:synthetic')")=='SYNTHETIC_AUTH'
    report['checks'].append('Original synthetic data and auth sentinel unchanged')
    # Capture every failure first; only expected offline external resources are classified.
-   report['expected_offline_external']=report['external_blocked']
+   font='https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Noto+Sans+TC:wght@500;700;900&display=swap'
+   report['expected_offline_external']=[u for u in report['external_blocked'] if u==font]
+   report['unexpected_external']=[u for u in report['external_blocked'] if u!=font]
+   assert not report['unexpected_external'], 'Unexpected external/API request attempt'
    assert not report['errors'], 'Uncaught application errors; see captured errors'
    assert not report['http_failures'], 'Local application resource HTTP failures; see captured list'
    assert all(not isinstance(c,dict) or c.get('broken_images',0)==0 for c in report['checks']), 'Broken image(s) detected'
