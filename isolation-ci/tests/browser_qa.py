@@ -76,7 +76,7 @@ async def run():
     await verify_original(original)
     report['results'].append({'parser_failure':fail,'observed':value});await ctx.close()
    for active in [False,True]:
-    ctx,original=await context(active=active)
+    ctx,original,executions=await context(active=active)
     for path in PAGES:
      page=await ctx.new_page();await page.goto(base+PREFIX+path);await page.wait_for_timeout(150)
      if active:

@@ -6,6 +6,9 @@ from playwright.async_api import async_playwright
 ROOT=Path(__file__).resolve().parents[1]
 OUT=Path(os.environ.get('QA_RESULTS',str(ROOT/'browser-results')));OUT.mkdir(exist_ok=True)
 SW=(ROOT/'overlay/entry-image-cache-sw.js').read_text()
+# Test-only completion acknowledgement, no cache/network behavior changed.
+assert SW.count('  })());\n});')==1
+SW=SW.replace('  })());\n});','  })().finally(() => event.ports?.[0]?.postMessage({complete:true})));\n});')
 PNG=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=')
 rev={'a':'r1','b':'r1'};hits={'a':0,'b':0};available=True
 class Handler(BaseHTTPRequestHandler):
@@ -23,7 +26,7 @@ class Handler(BaseHTTPRequestHandler):
    body=PNG;mime='image/png'
   else:body=b'<!doctype html><title>Synthetic image cache</title>'
   self.send_response(200);self.send_header('Content-Type',mime);self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(body)
-SEED="""async ({name,key,revision})=>{const db=await new Promise((ok,no)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore('images');r.onsuccess=()=>ok(r.result);r.onerror=no});await new Promise((ok,no)=>{const t=db.transaction('images','readwrite');t.objectStore('images').put({revision,blob:new Blob(['SENTINEL'],{type:'image/png'}),savedAt:Date.now(),lastUsed:Date.now()},key);t.oncomplete=ok;t.onerror=no});db.close()}"""
+SEED="""async ({name,key,revision})=>{const db=await new Promise((ok,no)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore('images');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(new Error(r.error?.name+': '+r.error?.message))});await new Promise((ok,no)=>{const t=db.transaction('images','readwrite');t.objectStore('images').put({revision,blob:new Blob(['SENTINEL'],{type:'image/png'}),savedAt:Date.now(),lastUsed:Date.now()},key);t.oncomplete=ok;t.onerror=()=>no(new Error(t.error?.name+': '+t.error?.message))});db.close()}"""
 READ="""async ({name,key})=>{const db=await new Promise((ok,no)=>{const r=indexedDB.open(name,1);r.onsuccess=()=>ok(r.result);r.onerror=no});const value=await new Promise((ok,no)=>{const t=db.transaction('images','readonly');const r=t.objectStore('images').get(key);r.onsuccess=()=>ok(r.result?{revision:r.result.revision,size:r.result.blob.size}:null);r.onerror=no});db.close();return value}"""
 async def main():
  global available
@@ -70,8 +73,7 @@ async def main():
    assert (await b.evaluate(READ,old))['revision']=='original'
    report['checks'].append('Revision update prunes A only, preserves B and original')
    # Original worker may attempt a synthetic TEST-NET URL; transport has no egress.
-   await a.evaluate("navigator.serviceWorker.controller.postMessage({type:'cache-loaded-entry-images',paths:['http://192.0.2.1/blocked.png']})")
-   await a.wait_for_timeout(500)
+   await a.evaluate("async()=>{const channel=new MessageChannel();const done=new Promise(ok=>channel.port1.onmessage=e=>{if(e.data.complete)ok()});navigator.serviceWorker.controller.postMessage({type:'cache-loaded-entry-images',paths:['http://192.0.2.1/blocked.png']},[channel.port2]);await done;channel.port1.close()}")
    assert await a.evaluate(READ,{'name':db_a,'key':'http://192.0.2.1/blocked.png'}) is None
    report['checks'].append('Worker cannot cache synthetic external URL with transport egress disabled')
    report['status']='PASSED';report['hits']=hits

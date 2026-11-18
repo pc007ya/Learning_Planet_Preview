@@ -50,6 +50,8 @@ async def main():
    report['checks'].append('Actual DEMO login reaches actual home; offline auth remains null')
    for subject in ['chinese','english','math']:
     await page.locator('.home-subject-card[data-subject="'+subject+'"]').click()
+    expected={'chinese':'國文','english':'英文','math':'數學'}[subject]
+    await page.locator('.subject-world-filter[data-world="'+expected+'"]:visible').wait_for(timeout=15000)
     await page.wait_for_timeout(3000)
     report['checks'].append({'subject':subject,'screen':(await page.locator('body').inner_text())[:3000],'canvases':await page.locator('canvas').count(),'broken_images':await page.locator('img').evaluate_all('(xs)=>xs.filter(x=>x.src&&x.complete&&x.naturalWidth===0).length')})
     await page.screenshot(path=str(OUT/('ui-'+subject+'.png')),full_page=True)
@@ -58,6 +60,11 @@ async def main():
    assert await original.evaluate("localStorage.getItem('learning-planet.student-profiles.v1')")=='SYNTHETIC_ORIGINAL'
    assert await original.evaluate("localStorage.getItem('firebase:authUser:synthetic')")=='SYNTHETIC_AUTH'
    report['checks'].append('Original synthetic data and auth sentinel unchanged')
+   # Capture every failure first; only expected offline external resources are classified.
+   report['expected_offline_external']=report['external_blocked']
+   assert not report['errors'], 'Uncaught application errors; see captured errors'
+   assert not report['http_failures'], 'Local application resource HTTP failures; see captured list'
+   assert all(not isinstance(c,dict) or c.get('broken_images',0)==0 for c in report['checks']), 'Broken image(s) detected'
    report['status']='SMOKE_PASSED';await browser.close()
  except Exception:
   report['status']='FAILED';report['error']=traceback.format_exc()
