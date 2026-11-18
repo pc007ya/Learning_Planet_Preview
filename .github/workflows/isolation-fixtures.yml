@@ -1,0 +1,41 @@
+name: Synthetic isolation browser tests (NO DEPLOY)
+on:
+  push:
+    branches: [ci/isolation-fixtures-20261118]
+    paths:
+      - isolation-ci/**
+      - .github/workflows/isolation-fixtures.yml
+permissions:
+  contents: read
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned public test runner
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install --with-deps ${{ matrix.browser }}
+      - name: Offline sentinel regression tests
+        run: python -m unittest discover -s isolation-ci/tests -p test_browser_harness_offline.py -v
+      - name: Local synthetic fixtures only (SW blocked, external requests denied)
+        env:
+          QA_BROWSER: ${{ matrix.browser }}
+        run: python isolation-ci/tests/browser_qa.py
+      - name: Retain synthetic results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isolation-fixtures-${{ matrix.browser }}
+          path: isolation-ci/browser-results/offline-fixture-report.json
+          retention-days: 7
