@@ -1,5 +1,5 @@
 """Engine diagnostic, NOT acceptance. Frozen prior public isolated artifact; no backend."""
-import asyncio,json,os,sys,threading,traceback,subprocess
+import asyncio,json,os,sys,threading,traceback,subprocess,re
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 sys.path.insert(0,'/tests/isolation-ci/tests')
@@ -9,9 +9,9 @@ OUT=Path('/results');OUT.mkdir(exist_ok=True)
 async def main():
  assert set(os.listdir('/sys/class/net'))=={'lo'}
  server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start();base=f'http://127.0.0.1:{server.server_port}'
- report={'scope':'Linux WebKit crash diagnosis only. Prior candidate b03dffa6 root, NOT route/deployment acceptance. no-fullscreen is test instrumentation, not an app fix.','modes':[]}
+ report={'scope':'Linux WebKit crash diagnosis only. Prior candidate b03dffa6 root, NOT route/deployment acceptance. Software Mesa env and removed storage bootstrap are test controls only, never product changes; native storage exists only in fresh synthetic no-egress context.','modes':[]}
  async with async_playwright() as p:
-  for mode in ['root-real']:
+  for mode in ['root-software-rendering','root-native-storage']:
    def memory():
     result={}
     for k in ['memory.events','memory.peak','memory.current','memory.max']:
@@ -25,10 +25,15 @@ async def main():
     while True:
      record['samples'].append(memory());await asyncio.sleep(1)
    sampler=asyncio.create_task(sample())
-   browser=await p.webkit.launch(headless=True)
+   browser=await p.webkit.launch(headless=True,env={**os.environ,**({'LIBGL_ALWAYS_SOFTWARE':'true','GALLIUM_DRIVER':'llvmpipe'} if mode=='root-software-rendering' else {})})
    ctx=await browser.new_context(service_workers='block')
    async def gate(route):
-    if route.request.url.startswith(base+'/'):await route.continue_()
+    if mode=='root-native-storage' and route.request.url==base+PREFIX:
+     html=Path('/source/index.html').read_text()
+     html,n=re.subn(r'<script>// Insert synchronously.*?</script>','<script>window.LP_PREVIEW_ONLY=true;window.LP_PREVIEW_READY=true;</script>',html,count=1,flags=re.S)
+     assert n==1
+     await route.fulfill(status=200,content_type='text/html',body=html)
+    elif route.request.url.startswith(base+'/'):await route.continue_()
     else:record['external_blocked'].append(route.request.url);await route.abort('blockedbyclient')
    await ctx.route('**/*',gate);await ctx.route_web_socket('**/*',lambda ws:ws.close())
    page=await ctx.new_page()
