@@ -1,0 +1,82 @@
+name: Deploy isolated acceptance preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: preview-pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read pinned public application
+        uses: actions/checkout@v4
+        with:
+          repository: pc007ya/Learning_Planet
+          ref: 0e39222ba892fbc823a884bad636cfb484501169
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Full checks and clean build
+        working-directory: source
+        run: |
+          npm ci
+          mv node_modules/.bin/vitest node_modules/.bin/vitest.original
+          printf '%s\n' '#!/bin/sh' 'exec node "$(dirname "$0")/../vitest/vitest.mjs" "$@" --maxWorkers=2 --no-file-parallelism' > node_modules/.bin/vitest
+          chmod +x node_modules/.bin/vitest
+          python3 scripts/patch-ipad-ux.py
+          python3 scripts/pack-nature-assets.py --verify-manifest
+          npm run check
+      - name: Stage complete public site
+        run: |
+          mkdir -p work/complete-site
+          rsync -a --exclude='_site' --exclude='node_modules' --exclude='.git' --exclude='.github' --exclude='functions' --exclude='firebase-debug.log' --exclude='src' --exclude='tests' --exclude='modules/math-mission-map/v11/qa' --exclude='docs' --exclude='qa' --exclude='science-curriculum-preview.html' --exclude='nature-planet-preview.html' --exclude='*.check.mjs' --exclude='*.test.mjs' source/ work/complete-site/
+          mkdir -p work/complete-site/src
+          cp source/src/firebase-config.js work/complete-site/src/firebase-config.js
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          p=Path('work/complete-site/index.html');html=p.read_text();token='97690c088436400287798663727583b5'
+          snippet="""<!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "97690c088436400287798663727583b5"}'></script><!-- End Cloudflare Web Analytics -->"""
+          if token not in html:
+              html=html.replace('</body>',snippet+'\n</body>',1) if '</body>' in html else html+'\n'+snippet+'\n'
+              p.write_text(html)
+          PYTHON
+      - name: Split and verify isolated app unit
+        run: |
+          python3 tools/two-pages-stage.py work/complete-site work/two-sites
+          python3 - <<'PYTHON'
+          import pathlib,json,re
+          p=pathlib.Path('work/two-sites');r=json.loads((p/'split-report.json').read_text())
+          if r['app']['bytes']>=1000000000 or r['assets']['bytes']!=989471212:raise SystemExit('Size or published asset identity budget mismatch')
+          for f in (p/'app').rglob('*'):
+              if f.is_file() and f.suffix in {'.json','.js','.mjs','.html','.md','.txt'}:
+                  s=f.read_text(errors='replace')
+                  if re.search(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"type"\s*:\s*"service_account"|gh[pousr]_[A-Za-z0-9]{30,}',s):raise SystemExit('Potential credential rejected')
+          print(json.dumps({'app':r['app'],'assets':r['assets'],'originalSiteChanged':False,'firebaseDeployments':0}))
+          PYTHON
+      - name: Retain verification inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-integrity
+          path: |
+            work/two-sites/split-report.json
+            work/two-sites/split-manifest.json
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: work/two-sites/app
+      - name: Publish preview only
+        id: deployment
+        uses: actions/deploy-pages@v4
