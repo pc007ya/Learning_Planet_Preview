@@ -1,82 +1,79 @@
-name: Deploy isolated acceptance preview
+name: Publish isolated map preview
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/preview-pages.yml"]
 permissions:
   contents: read
-  pages: write
-  id-token: write
 concurrency:
   group: preview-pages
   cancel-in-progress: false
 jobs:
-  deploy:
+  stage:
+    if: github.repository == 'pc007ya/Learning_Planet_Preview'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Read pinned public application
-        uses: actions/checkout@v4
-        with:
-          repository: pc007ya/Learning_Planet
-          ref: 0e39222ba892fbc823a884bad636cfb484501169
-          path: source
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Full checks and clean build
-        working-directory: source
+      - name: Fetch the immutable verified artifact by ID
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          npm ci
-          mv node_modules/.bin/vitest node_modules/.bin/vitest.original
-          printf '%s\n' '#!/bin/sh' 'exec node "$(dirname "$0")/../vitest/vitest.mjs" "$@" --maxWorkers=2 --no-file-parallelism' > node_modules/.bin/vitest
-          chmod +x node_modules/.bin/vitest
-          python3 scripts/patch-ipad-ux.py
-          python3 scripts/pack-nature-assets.py --verify-manifest
-          npm run check
-      - name: Stage complete public site
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = pc007ya/Learning_Planet_Preview
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14583015046" > artifact.json
+          jq -e '.id == 14583015046 and .expired == false and .workflow_run.id == 44630999410 and .workflow_run.head_sha == "75544a8f89142790b412f189be2bcbdfb5796620" and .digest == "sha256:6c0c546fb70b1a80764979947a1ab449fd90c8b97c861bc366e1d6032c98fa83"' artifact.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/44630999410" --jq '.conclusion' | grep -Fx success
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14583015046/zip" > evidence.zip
+          echo '6c0c546fb70b1a80764979947a1ab449fd90c8b97c861bc366e1d6032c98fa83  evidence.zip' | sha256sum -c -
+          mkdir evidence
+          unzip -q evidence.zip -d evidence
+      - name: Verify every source file before extraction
         run: |
-          mkdir -p work/complete-site
-          rsync -a --exclude='_site' --exclude='node_modules' --exclude='.git' --exclude='.github' --exclude='functions' --exclude='firebase-debug.log' --exclude='src' --exclude='tests' --exclude='modules/math-mission-map/v11/qa' --exclude='docs' --exclude='qa' --exclude='science-curriculum-preview.html' --exclude='nature-planet-preview.html' --exclude='*.check.mjs' --exclude='*.test.mjs' source/ work/complete-site/
-          mkdir -p work/complete-site/src
-          cp source/src/firebase-config.js work/complete-site/src/firebase-config.js
-          python3 - <<'PYTHON'
-          from pathlib import Path
-          p=Path('work/complete-site/index.html');html=p.read_text();token='97690c088436400287798663727583b5'
-          snippet="""<!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "97690c088436400287798663727583b5"}'></script><!-- End Cloudflare Web Analytics -->"""
-          if token not in html:
-              html=html.replace('</body>',snippet+'\n</body>',1) if '</body>' in html else html+'\n'+snippet+'\n'
-              p.write_text(html)
-          PYTHON
-      - name: Split and verify isolated app unit
+          set -euo pipefail
+          TAR=evidence/candidate-app-NOT-DEPLOYED.tar
+          python3 qa/preview-publish/verify_tar.py "$TAR" evidence/verification/candidate-app-inventory.json \
+            --tar-sha256 9bc22144efa2f829e21c08caa633874c9f2b1384dc031f0ac260fac8c9e7eccf \
+            --tree-sha256 7d4e8989d4aacf015a445eabab2ca40e24ecbebc1df0b7a70e32d4047212a06b
+          mkdir -p candidate-source
+          tar --extract --file "$TAR" --directory candidate-source --no-same-owner --no-same-permissions
+      - name: Construct and verify the versioned public preview
         run: |
-          python3 tools/two-pages-stage.py work/complete-site work/two-sites
-          python3 - <<'PYTHON'
-          import pathlib,json,re
-          p=pathlib.Path('work/two-sites');r=json.loads((p/'split-report.json').read_text())
-          if r['app']['bytes']>=1000000000 or r['assets']['bytes']!=989471212:raise SystemExit('Size or published asset identity budget mismatch')
-          for f in (p/'app').rglob('*'):
-              if f.is_file() and f.suffix in {'.json','.js','.mjs','.html','.md','.txt'}:
-                  s=f.read_text(errors='replace')
-                  if re.search(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"type"\s*:\s*"service_account"|gh[pousr]_[A-Za-z0-9]{30,}',s):raise SystemExit('Potential credential rejected')
-          print(json.dumps({'app':r['app'],'assets':r['assets'],'originalSiteChanged':False,'firebaseDeployments':0}))
-          PYTHON
-      - name: Retain verification inventory
-        uses: actions/upload-artifact@v4
-        with:
-          name: preview-integrity
-          path: |
-            work/two-sites/split-report.json
-            work/two-sites/split-manifest.json
-      - uses: actions/configure-pages@v5
+          set -euo pipefail
+          node --test qa/preview-publish/handoff.test.mjs
+          python3 qa/preview-publish/stage.py candidate-source evidence/verification/candidate-app-inventory.json pages | tee release-receipt.json
+          jq -e '.files == 5606 and .bytes == 995254938 and .inventory_sha256 == "46bb6b68beb063e906a3ce28e6e920bc9384df07a866ae523e4cb391ef339aa2" and .legacy_allowlisted_images_served_at_root == 0' release-receipt.json
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: work/two-sites/app
-      - name: Publish preview only
-        id: deployment
+          path: pages
+  deploy:
+    needs: stage
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify published preview URLs, not production
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          test "${PAGE_URL%/}" = https://pc007ya.github.io/Learning_Planet_Preview
+          base="${PAGE_URL%/}"
+          curl -fsS --retry 5 --retry-all-errors --max-time 30 "$base/v2/maps-preview/index.html?release=$GITHUB_SHA" -o map-index.html
+          grep -F '僅地圖驗收，不登入、不寫入進度' map-index.html
+          curl -fsS --retry 5 --retry-all-errors --max-time 30 "$base/v2/index.html?release=$GITHUB_SHA" -o app-index.html
+          grep -F 'entry-image-progress.js' app-index.html >/dev/null
+          curl -fsS --retry 5 --retry-all-errors --max-time 30 "$base/entry-image-cache-sw.js?release=$GITHUB_SHA" -o worker.js
+          grep -F 'skipWaiting' worker.js >/dev/null
+          ! grep -Eq "indexedDB|respondWith|importScripts" worker.js
