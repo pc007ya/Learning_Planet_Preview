@@ -1,4 +1,4 @@
-name: Publish isolated map preview R3
+name: Publish isolated map preview R4
 on:
   push:
     branches: [main]
@@ -55,6 +55,14 @@ jobs:
           for f in $(find qa/maps-r3/overlay -name '*.mjs'); do node --check "$f"; done
           node --test qa/maps-r3/tests/frame-meter.test.mjs
           for grade in {1..6}; do node qa/maps-r3/tests/english-road.test.mjs "$grade"; done
+      - name: Add and test the separate R4 acceptance slice
+        run: |
+          set -euo pipefail
+          python3 qa/maps-r4/stage-overlay.py pages qa/maps-r4/overlay 995363859
+          for f in $(find qa/maps-r4/overlay -name '*.mjs'); do node --check "$f"; done
+          node --test qa/maps-r4/tests/frame-meter.test.mjs
+          node qa/maps-r4/tests/english-footprint.mjs
+          for grade in {1..6}; do node qa/maps-r4/tests/english-road.test.mjs "$grade"; done
       - uses: actions/upload-pages-artifact@v3
         with:
           path: pages
@@ -74,16 +82,16 @@ jobs:
           persist-credentials: false
       - id: deployment
         uses: actions/deploy-pages@v4
-      - name: Verify every published R3 byte on the GitHub Pages preview
+      - name: Verify every published R3 and R4 byte on the GitHub Pages preview
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
           set -euo pipefail
           test "${PAGE_URL%/}" = https://pc007ya.github.io/Learning_Planet_Preview
           while IFS= read -r -d '' file; do
-            rel="${file#qa/maps-r3/overlay/}"
+            rel="${file#*/overlay/}"
             curl -fsS --retry 4 --retry-all-errors --max-time 25 "${PAGE_URL%/}/$rel?v=$GITHUB_SHA" -o live-r3
             cmp "$file" live-r3
-          done < <(find qa/maps-r3/overlay -type f -print0)
+          done < <(find qa/maps-r3/overlay qa/maps-r4/overlay -type f -print0)
           curl -fsS --retry 4 --retry-all-errors --max-time 25 "${PAGE_URL%/}/v2/maps-preview/viewer.mjs?v=$GITHUB_SHA" -o live-v2
           echo '8f3f9465571f4db596c72d62eb4b0d6b88e467c7cc87cf016a70273b1e6257d2  live-v2' | sha256sum -c -
