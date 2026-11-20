@@ -1,4 +1,4 @@
-name: Publish isolated map preview R5
+name: Publish isolated map preview R6
 on:
   push:
     branches: [main]
@@ -71,6 +71,18 @@ jobs:
           node --test qa/maps-r5/tests/frame-meter.test.mjs
           node qa/maps-r5/tests/english-footprint.mjs
           for grade in {1..6}; do node qa/maps-r5/tests/english-road.test.mjs "$grade"; done
+      - name: Add and test the separate R6 acceptance slice
+        run: |
+          set -euo pipefail
+          python3 qa/maps-r6/stage-overlay.py pages qa/maps-r6/overlay 995610788
+          for f in $(find qa/maps-r6/overlay -name '*.mjs'); do node --check "$f"; done
+          node --test qa/maps-r6/tests/frame-meter.test.mjs
+          node qa/maps-r6/tests/english-footprint.mjs
+          for grade in {1..6}; do node qa/maps-r6/tests/english-road.test.mjs "$grade"; done
+          node qa/maps-r6/tests/dynamic-turns.mjs
+          node qa/maps-r6/tests/corner-shoulders.mjs
+          node qa/maps-r6/tests/chinese-graph-test.mjs
+          node qa/maps-r6/tests/chinese-runtime-test.mjs
       - uses: actions/upload-pages-artifact@v3
         with:
           path: pages
@@ -90,7 +102,7 @@ jobs:
           persist-credentials: false
       - id: deployment
         uses: actions/deploy-pages@v4
-      - name: Verify every published R3, R4 and R5 byte on the GitHub Pages preview
+      - name: Verify every published R3 through R6 byte on the GitHub Pages preview
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
@@ -100,6 +112,6 @@ jobs:
             rel="${file#*/overlay/}"
             curl -fsS --retry 4 --retry-all-errors --max-time 25 "${PAGE_URL%/}/$rel?v=$GITHUB_SHA" -o live-r3
             cmp "$file" live-r3
-          done < <(find qa/maps-r3/overlay qa/maps-r4/overlay qa/maps-r5/overlay -type f -print0)
+          done < <(find qa/maps-r3/overlay qa/maps-r4/overlay qa/maps-r5/overlay qa/maps-r6/overlay -type f -print0)
           curl -fsS --retry 4 --retry-all-errors --max-time 25 "${PAGE_URL%/}/v2/maps-preview/viewer.mjs?v=$GITHUB_SHA" -o live-v2
           echo '8f3f9465571f4db596c72d62eb4b0d6b88e467c7cc87cf016a70273b1e6257d2  live-v2' | sha256sum -c -
