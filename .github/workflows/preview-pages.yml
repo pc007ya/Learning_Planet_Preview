@@ -1,4 +1,4 @@
-name: Publish isolated map preview
+name: Publish isolated map preview R3
 on:
   push:
     branches: [main]
@@ -48,6 +48,13 @@ jobs:
           node --test qa/preview-publish/handoff.test.mjs
           python3 qa/preview-publish/stage.py candidate-source evidence/verification/candidate-app-inventory.json pages | tee release-receipt.json
           jq -e '.files == 5606 and .bytes == 995254938 and .inventory_sha256 == "46bb6b68beb063e906a3ce28e6e920bc9384df07a866ae523e4cb391ef339aa2" and .legacy_allowlisted_images_served_at_root == 0' release-receipt.json
+      - name: Add the isolated R3 acceptance slice without replacing existing files
+        run: |
+          set -euo pipefail
+          python3 qa/maps-r3/stage-overlay.py pages qa/maps-r3/overlay
+          for f in $(find qa/maps-r3/overlay -name '*.mjs'); do node --check "$f"; done
+          node --test qa/maps-r3/tests/frame-meter.test.mjs
+          for grade in {1..6}; do node qa/maps-r3/tests/english-road.test.mjs "$grade"; done
       - uses: actions/upload-pages-artifact@v3
         with:
           path: pages
@@ -55,25 +62,28 @@ jobs:
     needs: stage
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - id: deployment
         uses: actions/deploy-pages@v4
-      - name: Verify published preview URLs, not production
+      - name: Verify every published R3 byte on the GitHub Pages preview
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
           set -euo pipefail
           test "${PAGE_URL%/}" = https://pc007ya.github.io/Learning_Planet_Preview
-          base="${PAGE_URL%/}"
-          curl -fsS --retry 5 --retry-all-errors --max-time 30 "$base/v2/maps-preview/index.html?release=$GITHUB_SHA" -o map-index.html
-          grep -F '僅地圖驗收，不登入、不寫入進度' map-index.html
-          curl -fsS --retry 5 --retry-all-errors --max-time 30 "$base/v2/index.html?release=$GITHUB_SHA" -o app-index.html
-          grep -F 'entry-image-progress.js' app-index.html >/dev/null
-          curl -fsS --retry 5 --retry-all-errors --max-time 30 "$base/entry-image-cache-sw.js?release=$GITHUB_SHA" -o worker.js
-          grep -F 'skipWaiting' worker.js >/dev/null
-          ! grep -Eq "indexedDB|respondWith|importScripts" worker.js
+          while IFS= read -r -d '' file; do
+            rel="${file#qa/maps-r3/overlay/}"
+            curl -fsS --retry 4 --retry-all-errors --max-time 25 "${PAGE_URL%/}/$rel?v=$GITHUB_SHA" -o live-r3
+            cmp "$file" live-r3
+          done < <(find qa/maps-r3/overlay -type f -print0)
+          curl -fsS --retry 4 --retry-all-errors --max-time 25 "${PAGE_URL%/}/v2/maps-preview/viewer.mjs?v=$GITHUB_SHA" -o live-v2
+          echo '8f3f9465571f4db596c72d62eb4b0d6b88e467c7cc87cf016a70273b1e6257d2  live-v2' | sha256sum -c -
