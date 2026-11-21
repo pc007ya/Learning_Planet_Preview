@@ -80,6 +80,17 @@ main{padding-top:.7rem}
 """
 
 def child(s, preview=False):
+    if preview and not s.startswith('<!doctype html>'):
+        # The immutable base previously added a global isolation preamble.
+        # This new fixture replaces it with self-only CSP and a memory-only store.
+        # Recognize only that generated preamble; never trim unknown markup.
+        wrapper = re.match(
+            r'\A<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="connect-src '
+            r"\x27self\x27 https://pc007ya\.github\.io https://cdn\.jsdelivr\.net https://unpkg\.com https://www\.gstatic\.com data: blob:; form-action \x27none\x27"
+            r'"><script>(?P<bootstrap>.*?)</script>(?=<!doctype html>)', s, re.S)
+        if not wrapper or not wrapper['bootstrap'].startswith('// Insert synchronously before every other script in EVERY preview HTML entry.') or "__LP_PREVIEW_ISOLATION_V1__" not in wrapper['bootstrap'] or 'learning-planet-preview.v1:' not in wrapper['bootstrap']:
+            raise ValueError('Unexpected generated isolation preamble on English child input')
+        s = s[wrapper.end():]
     s=sub(s,'<main><h1>英文原創延伸</h1>','<main><div id="lesson-controls" class="lesson-toolbar" hidden><button id="return-lessons" type="button" aria-label="返回英文課程列表">← 課程列表</button><button id="stop" type="button">停止朗讀</button></div>')
     s=sub(s,'<button id="stop">停止朗讀</button>','')
     s=sub(s,'<div id="content"></div>','<div id="content" hidden></div>')

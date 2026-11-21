@@ -2,7 +2,7 @@ name: Publish isolated map and lesson previews
 on:
   push:
     branches: [main]
-    paths: [".github/workflows/preview-pages.yml"]
+    paths: [".github/workflows/preview-pages.yml", "qa/lessons-r1/**"]
 permissions:
   contents: read
 concurrency:
