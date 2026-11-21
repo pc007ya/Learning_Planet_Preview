@@ -2,7 +2,7 @@ name: Publish isolated map and lesson previews
 on:
   push:
     branches: [main]
-    paths: [".github/workflows/preview-pages.yml", "qa/lessons-r1/**"]
+    paths: [".github/workflows/preview-pages.yml", "qa/lessons-r1/**", "qa/english-audio-r2/**"]
 permissions:
   contents: read
 concurrency:
@@ -117,12 +117,24 @@ jobs:
         run: |
           set -euo pipefail
           bash qa/lessons-r1/stage.sh
+      - name: Add English audio R2 without replacing previous previews
+        run: |
+          set -euo pipefail
+          python3 qa/english-audio-r2/stage.py pages
+          node --check pages/v2/english-original-audio-r2/modules/english-original/lesson-runtime.js
+          node --test qa/english-audio-r2/speak.test.cjs
       - name: Test actual lesson preview rendering in Chromium
         run: |
           set -euo pipefail
           npm install --no-save --package-lock=false playwright@1.56.1
           npx playwright install --with-deps chromium
           bash qa/lessons-r1/browser.sh
+          python3 -m http.server 8372 --bind 127.0.0.1 --directory pages > /tmp/english-audio-http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          export BASE_URL=http://127.0.0.1:8372
+          curl -fsS --retry 5 --retry-connrefused --retry-delay 1 "$BASE_URL/v2/english-original-audio-r2/" >/dev/null
+          node qa/english-audio-r2/browser.cjs
       - uses: actions/upload-pages-artifact@v3
         with:
           path: pages
@@ -157,3 +169,4 @@ jobs:
           echo '8f3f9465571f4db596c72d62eb4b0d6b88e467c7cc87cf016a70273b1e6257d2  live-v2' | sha256sum -c -
           curl -fsS --retry 4 --retry-all-errors --max-time 25 "${PAGE_URL%/}/v2/lesson-preview-r1/release-manifest.json?v=$GITHUB_SHA" -o lesson-manifest.json
           python3 qa/lessons-r1/verify-live.py "${PAGE_URL%/}" "$GITHUB_SHA" lesson-manifest.json
+          python3 qa/english-audio-r2/verify-live.py "${PAGE_URL%/}" "$GITHUB_SHA"
