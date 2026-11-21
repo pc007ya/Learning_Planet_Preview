@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'">
+<title>數學星球｜測驗注音驗收</title>
+<link rel="stylesheet" href="quiz-shell.css">
+<script defer src="model.js"></script>
+<script type="module" src="preview.mjs"></script>
+</head>
+<body id="dc-root">
+<main class="app-shell module-focus math-quiz-focus">
+<div class="quiz-master-shell is-math-master" data-screen-label="練習題">
+  <div class="quiz-progress">
+    <a class="quiz-back-button" href="../maps-preview-r9/" aria-label="返回地圖預覽">←</a>
+    <div><div class="status-line"><span id="title"></span><span>第 1／10 題</span></div><div class="progress-track"><div></div></div></div>
+    <div class="quiz-timer-tools"><div class="quiz-timer-circle" aria-label="驗收示意 30 秒"><span>30</span><small>秒</small></div>
+      <button type="button" class="quiz-control quiz-zhuyin-toggle" id="toggle" aria-pressed="false" aria-label="開啟注音顯示"><b>ㄅ</b></button>
+    </div>
+  </div>
+  <section class="quiz-card">
+    <h2 class="quiz-heading" id="stem"></h2>
+    <img id="figure" alt="">
+    <div class="options" id="options"></div>
+    <button class="math-master-submit" id="submit" disabled>先選答案</button>
+  </section>
+  <section class="math-master-analysis" aria-live="polite">
+    <header><strong>本題分析</strong></header><p id="result">選擇答案並按「提交」，這裡會顯示解題方法。</p><p id="explain"></p>
+  </section>
+  <p class="preview-note">GitHub Pages 驗收｜使用實際數學基礎題型。此頁不計時、不登入、不記錄進度。</p>
+</div></main>
+</body></html>

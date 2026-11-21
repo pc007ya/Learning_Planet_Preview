@@ -1,0 +1,38 @@
+:root{font-family:system-ui,"Noto Sans TC",sans-serif;background:#090f30;color:#f7fbff}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top,#27376a,#0e1335 60%,#090d25)}
+.app-shell{padding:12px 20px 24px}
+.quiz-master-shell{display:grid;gap:15px;max-width:1100px;margin:auto}
+.quiz-progress{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:14px;align-items:center;padding:10px 14px;border:2px solid #89dbf1;border-radius:24px;background:#edf7fc;color:#463782}
+.quiz-back-button{border:2px solid #7ac9f4;border-radius:50%;width:45px;height:45px;display:grid;place-items:center;color:#2462ba;text-decoration:none;font-size:24px;font-weight:900}
+.status-line{display:flex;justify-content:space-between;gap:8px;font-weight:900}
+.status-line span:first-child{font-size:clamp(13px,2vw,23px)}
+.status-line span:last-child{white-space:nowrap}
+.progress-track{margin-top:5px;height:10px;border-radius:99px;background:#e8e3fa;overflow:hidden}
+.progress-track>div{height:100%;width:10%;border-radius:99px;background:linear-gradient(90deg,#35c98a,#22c8d8)}
+.quiz-timer-tools{display:flex;align-items:center;gap:8px}
+.quiz-timer-circle{display:grid;place-items:center;align-content:center;width:62px;height:62px;border-radius:50%;background:#102044;color:white;border:3px solid #ff7ba8;font-weight:900;font-size:23px;line-height:1}
+.quiz-timer-circle small{font-size:10px;margin-top:3px}
+.quiz-control{border:0;border-radius:30px;padding:8px;min-width:44px;min-height:44px;background:#dce7f2;color:#245f9e;cursor:pointer}
+.quiz-control[aria-pressed=true]{background:#245f9e;color:#fff}
+.quiz-card{padding:22px 24px 24px;border:1px solid #69d6fc;border-radius:28px;background:linear-gradient(145deg,#111e48,#1c1945);display:grid;justify-items:center}
+.quiz-heading{margin:0 0 14px;font-size:clamp(21px,3vw,32px);font-weight:900;line-height:1.5;text-align:center}
+.quiz-card img{width:min(100%,660px);height:auto;max-height:380px;object-fit:contain;display:block;border-radius:16px}
+.options{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}
+.options button,.math-master-submit{min-height:48px;cursor:pointer;border-radius:16px;font:900 clamp(17px,3vw,26px)/1.25 system-ui;color:#f7fbff;background:linear-gradient(145deg,#19386b,#2a205e);border:2px solid #82bcfb}
+.options button[aria-pressed=true]{border-color:#ffc857;background:#735327}
+.options button[data-right]{border-color:#35c98a;background:#124f47}
+.math-master-submit{width:min(280px,100%);font-size:16px;margin-top:12px}
+.math-master-submit:disabled{opacity:.55;cursor:default}
+.math-master-analysis{padding:14px 20px 12px;border:1px solid #81dafa;border-radius:24px;background:linear-gradient(145deg,#132849,#1d1b46)}
+.math-master-analysis header strong{display:inline-block;padding:7px 15px;border-radius:999px;background:linear-gradient(180deg,#67c93f,#31992b)}
+.math-master-analysis p{margin:6px 0;line-height:1.6;color:#dcecff}
+.preview-note{margin:0;font-size:13px;color:#a9bfd7}
+button:focus-visible,a:focus-visible{outline:3px solid #ffd377;outline-offset:2px}
+  ruby.quiz-reading{display:inline-flex;align-items:center;vertical-align:middle;white-space:nowrap;line-height:1.25;margin-inline-end:.08em}
+  ruby.quiz-reading rt,body[data-nozhuyin="1"] ruby.quiz-reading rt{display:block;position:relative;align-self:center;font-size:.34em;line-height:1;min-width:1.7em;padding-right:.65em;color:inherit;font-weight:500;text-align:center}
+  .quiz-reading-sounds{display:flex;flex-direction:column;align-items:center;line-height:1.02}.quiz-reading-sounds>span{display:block;height:1.02em}
+  .quiz-reading-tone{position:absolute;right:0;top:50%;transform:translateY(-50%);line-height:1}.quiz-reading-tone.neutral{right:auto;left:0;top:-.55em;width:1em;transform:none}
+@media(max-width:640px){
+.app-shell{padding:7px 8px 18px}.quiz-master-shell{gap:8px}.quiz-progress{grid-template-columns:38px minmax(0,1fr) auto;gap:5px;padding:5px 7px;border-radius:16px}.quiz-back-button{width:36px;height:36px}.status-line{display:grid;gap:1px;font-size:10px}.status-line span:first-child{font-size:12px}.quiz-timer-circle{width:39px;height:39px;font-size:17px}.quiz-timer-circle small{font-size:8px}.quiz-timer-tools{gap:2px}.quiz-card{padding:12px 8px;border-radius:16px}.quiz-heading{margin:0 0 8px}.options{gap:5px;margin-top:9px}.options button{min-height:44px}.math-master-submit{margin-top:7px}.math-master-analysis{padding:8px 12px;border-radius:16px}.math-master-analysis header strong{padding:4px 8px;font-size:13px}.preview-note{font-size:11px}
+}

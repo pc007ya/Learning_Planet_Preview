@@ -1,4 +1,4 @@
-name: Publish isolated map preview R9
+name: Publish isolated map and lesson previews
 on:
   push:
     branches: [main]
@@ -113,6 +113,16 @@ jobs:
           python3 qa/maps-r9/stage-overlay.py pages qa/maps-r9/overlay 995974489
           find qa/maps-r9/overlay -name '*.mjs' -exec node --check {} \;
           bash qa/maps-r9/run-tests.sh
+      - name: Build and test isolated lesson previews
+        run: |
+          set -euo pipefail
+          bash qa/lessons-r1/stage.sh
+      - name: Test actual lesson preview rendering in Chromium
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install --with-deps chromium
+          bash qa/lessons-r1/browser.sh
       - uses: actions/upload-pages-artifact@v3
         with:
           path: pages
@@ -132,7 +142,7 @@ jobs:
           persist-credentials: false
       - id: deployment
         uses: actions/deploy-pages@v4
-      - name: Verify every published R3 through R9 byte on the GitHub Pages preview
+      - name: Verify every published preview file on GitHub Pages
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
@@ -145,3 +155,5 @@ jobs:
           done < <(find qa/maps-r3/overlay qa/maps-r4/overlay qa/maps-r5/overlay qa/maps-r6/overlay qa/maps-r7/overlay qa/maps-r8/overlay qa/maps-r9/overlay -type f -print0)
           curl -fsS --retry 4 --retry-all-errors --max-time 25 "${PAGE_URL%/}/v2/maps-preview/viewer.mjs?v=$GITHUB_SHA" -o live-v2
           echo '8f3f9465571f4db596c72d62eb4b0d6b88e467c7cc87cf016a70273b1e6257d2  live-v2' | sha256sum -c -
+          curl -fsS --retry 4 --retry-all-errors --max-time 25 "${PAGE_URL%/}/v2/lesson-preview-r1/release-manifest.json?v=$GITHUB_SHA" -o lesson-manifest.json
+          python3 qa/lessons-r1/verify-live.py "${PAGE_URL%/}" "$GITHUB_SHA" lesson-manifest.json
